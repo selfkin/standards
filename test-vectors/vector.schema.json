@@ -17,7 +17,8 @@
         "tokens",
         "envelope",
         "residency",
-        "signatures"
+        "signatures",
+        "slice"
       ]
     },
     "description": {
@@ -102,7 +103,8 @@
             "jcs-signing-input",
             "verify",
             "sign",
-            "receive"
+            "receive",
+            "session-check"
           ]
         },
         "profile": {
