@@ -18,7 +18,9 @@ Each vector is a fixed input with an expected result, so that the validator in [
 | `envelope/` | Envelope structure and token binding (SK-COM §A5, §A5.2, §A6), and receive sequences (§A5, §A6, §A9) |
 | `residency/` | Residency tag syntax and intersection (SK-RT §11) |
 | `signatures/` | RFC 8032 known answers, `dcbor` and `jcs` signing input, signing, and verification (SK-COM §A5.1, Appendix F) |
+| `slice/` | Vertical slice: a session record in a Core-signed envelope, one privacy report per egress, and the Core-rendered effective tier display (SK-RT §5, §13, §21) |
 | `wire/` | Frames, QR pairing, advertisement names, chunks, sealed frames, and prekeys of the wire binding ([SK-WIRE](../drafts/sk-wire/wire-binding-v0.1.md)); all provisional |
+
 
 ## Vector Format
 
@@ -35,7 +37,7 @@ A file holds `category`, `description`, and a list of `vectors`. Files do not re
 
 A vector with `"kind": "sequence"` has an initial `state` and ordered `steps` instead of `operation`, `input`, and `expected`. Each step has its own `operation`, `now` (the receiver's clock for that step), `input`, and `expected`, and sees the state left by the steps before it (seen nonces, executed `idem_key` values, usage counters). A step's `expected` has `result` (with an optional `reason`), `executed` (whether the requested action ran), or both; absent members are not compared. Steps are in time order. A runner that does not support every step skips the whole vector.
 
-Each vector has one fault, so the expected result does not depend on check order. Signatures inside token and envelope inputs are placeholders, as in [examples/](../examples/); those operations do not check signatures.
+Each vector has one fault, so the expected result does not depend on check order. Signatures inside token and envelope inputs are placeholders, as in [examples/](../examples/); those operations do not check signatures. The `slice/` vectors are the exception: their signatures are real Ed25519 signatures over `jcs` with the test keys, so a runner can verify them.
 
 ## Operations
 
@@ -51,6 +53,7 @@ Each vector has one fault, so the expected result does not depend on check order
 | `jcs-signing-input` | `object` | `value`: RFC 8785 canonical JSON of the object without `sig`, as a string |
 | `sign` | `object`, `key`, `canon` | `value`: the resulting `sig.value` (unpadded base64url) |
 | `verify` | `object`, `public_key` (name in the key file) | accept or refuse with `bad-signature`. Whether the key belongs to the signer is out of scope |
+| `session-check` | `envelope`, `core_kid`, `public_key` (name in the key file of the Core key) | accept or refuse: the envelope as in `envelope-check`, signed by the Core key, carrying a session record (`schemas/session-record.schema.json`) whose core is the sender; every egress has a report with the same payload digest; the tier display is for this session, signed by the Core key, shows every runtime, hop, and provider profile of the session, and is not higher than their lowest tier; an R0 session shows `prototype`. Runners with `EdDSA` and `jcs` also verify the envelope and display signatures against `public_key`; the token signature is by `rfc8032-test-3` (owner) |
 | `receive` (sequence steps) | `envelope`, optional `delivery` (`direct`, the default, or `store-and-forward`); state `receiver` (its identity), optional `seen_nonces`, optional `revoked` (identities and token ids revoked before the first step) | accept or refuse, and `executed`. Everything `envelope-check` covers, plus `aud` against the receiver, `expires` against `now`, the time validity of the token and its chain at `now` (at the envelope's `issued` for `store-and-forward` delivery without `instructions`, SK-COM §A9), the 7-day lifetime and `issued` not after `now` for `store-and-forward`, revocation, replayed nonces, `idem_key` at most once, and usage counting. Signatures, sender identity, pairing, residency, `cnf`, root issuer trust, and local policy are assumed to pass; the requested action has a local handler |
 | `wire-frame-check` | `frame_hex` (CBOR) | accept or refuse with `malformed`: the frame against `wire-frame` in [wire-binding-v0.1.cddl](../drafts/sk-wire/wire-binding-v0.1.cddl). Structure only: no signatures, tokens, clocks, or state |
 | `wire-qr-decode` | `qr` (string) | `value`: `version`, `presenter`, `spki_hex`, `endpoints` (host, port, carrier), `secret_hex`, `expires`; or refuse with `malformed` (prefix other than `SK1:`, invalid base45, or a payload outside `qr-payload`) |
@@ -76,11 +79,11 @@ python -m unittest discover -s tools/validate -v   # includes the vectors
 python tools/validate/test_vectors.py --summary    # pass, fail, and skip per file
 ```
 
-The validator runs `resource-covers`, `token-check`, `envelope-check`, and `residency-tag-syntax`, comparing accept or refuse only because it has no refusal codes, and skips the rest, including `receive` sequences. It does check that every envelope a `receive` step expects to be accepted is a valid envelope. Other implementations can read the files directly: validate each file against `vector.schema.json`, run the operations they support, and compare results.
+The validator runs `resource-covers`, `token-check`, `envelope-check`, `residency-tag-syntax`, and `session-check` (key binding by `kid`, no signature verification), comparing accept or refuse only because it has no refusal codes, and skips the rest, including `receive` sequences and every vector that lists `requires`. It does check that every envelope a `receive` step expects to be accepted is a valid envelope. Other implementations can read the files directly: validate each file against `vector.schema.json`, run the operations they support, and compare results.
 
 ## Status and Versioning
 
-The suite has 221 vectors: 152 normative, 67 provisional, and 2 withdrawn.
+The suite has 240 vectors: 171 normative, 67 provisional, and 2 withdrawn.
 
 | Category | Normative | Provisional | Withdrawn |
 |---|---|---|---|
@@ -90,6 +93,7 @@ The suite has 221 vectors: 152 normative, 67 provisional, and 2 withdrawn.
 | Envelope (receive sequences) | 10 | 4 (#22, #24) | 0 |
 | Residency | 24 | 0 | 0 |
 | Signatures | 37 | 0 | 0 |
+| Slice (session record and tier display) | 19 | 0 | 0 |
 | Wire binding (SK-WIRE) | 0 | 42 (#67) | 0 |
 
 The resource-matching vectors, and two binding vectors that depend on them, are provisional until the matching rule proposed for #23 and #48 is merged. `open_issue` may name an issue or a pull request. Receive sequences about how a repeated `idem_key` is answered (#22) and how usage is counted (#24) are provisional; replay, expiry, audience, and at-most-once execution are normative. The `dcbor` signing input, `dcbor` signatures, chain link signatures, and the timestamp, number, and text rules for signed objects (#10, #17) were added in 0.2.0. Later phases add freshness checks against a clock, such as a future `iat` (#47) and `max_clock_skew`, root issuers and `cnf` (#19, #20), and more stateful receiver checks such as sequence windows, clock skew, nonce retention, and chain-wide budget counting (#21, #22, #24).
