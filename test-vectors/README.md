@@ -21,7 +21,6 @@ Each vector is a fixed input with an expected result, so that the validator in [
 | `slice/` | Vertical slice: a session record in a Core-signed envelope, one privacy report per egress, and the Core-rendered effective tier display (SK-RT §5, §13, §21) |
 | `wire/` | Frames, QR pairing, advertisement names, chunks, sealed frames, and prekeys of the wire binding ([SK-WIRE](../drafts/sk-wire/wire-binding-v0.1.md)); all provisional |
 
-
 ## Vector Format
 
 A file holds `category`, `description`, and a list of `vectors`. Files do not record the suite version; it lives only in `VERSION`. Each vector has:
